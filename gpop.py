@@ -83,11 +83,11 @@ def main():
     parser_pop = subparsers.add_parser("pop", help="return gene id with position input")
     parser_create.add_argument("annotation", help="Annotation gtf/gff files to create the db")
     parser_create.add_argument("-n", "--name", help="db name", default="test")
-    parser_create.add_argument('-p', "--path", help="path to storage the db and config", default="/home/jianshu/gpfs/punim1068/db/gpop")
+    parser_create.add_argument('-p', "--path", help="path to storage the db and config", default="~/.gpop")
     parser_pop.add_argument("--db", help="db name to search the position")
     parser_pop.add_argument("chromesome", help="chromesome id", type=str)
     parser_pop.add_argument("position", help="position to check", type=int)
-    parser_pop.add_argument("--path", '-p', default="/home/jianshu/gpfs/punim1068/db/gpop", help="path to storage the db and config")
+    parser_pop.add_argument("--path", '-p', default="~/.gpop", help="path to storage the db and config")
     args = parser.parse_args()
 
     if args.command == "create":
