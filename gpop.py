@@ -230,8 +230,13 @@ def main():
                         for line in output_line:
                             m_out.write("\t".join(line) + "\n")
                 else:
-                    for line in output_line:
-                        print("\t".join(line))
+                    try:
+                        for line in output_line:
+                            print("\t".join(line))
+                    except BrokenPipeError as e:
+                        pass
+                    finally:
+                        sys.stderr.close()
 
             else:
                 print(f"Could not find {db_file} in current database")
