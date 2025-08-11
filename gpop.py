@@ -5,6 +5,7 @@ import json
 import argparse
 import sys
 import subprocess
+import gzip
 
 def read_db_from_json(j_file):
     db_dict = {}
@@ -59,10 +60,12 @@ def create_annotation_dict(annofile):
                 final_dict[chromesome] = gene_list
     return final_dict
 
-def find_gene(chromesome, position, db):
+def find_gene(chromesome, position, db, mtype="single"):
+    return_list = []
     chrome_list = db.get(chromesome,[])
     if len(chrome_list) == 0:
-        print(f"please check your chromesome input {chromesome}, no record of this chromesome in DB")
+        if mtype == "single":
+            print(f"please check your chromesome input {chromesome}, no record of this chromesome in DB")
     else:
         for rec in chrome_list:
             start, end, gene_id, gene_name = rec
@@ -70,10 +73,32 @@ def find_gene(chromesome, position, db):
                 continue
             else:
                 if start <= position:
-                    print(chromesome, start, end, gene_id, gene_name)
+                    if mtype == "single":
+                        print(chromesome, start, end, gene_id, gene_name)
+                    return_list.append([chromesome, start, end, gene_id, gene_name])
                     continue
                 else:
                     break
+    return return_list
+
+    
+def join_search_result(g_search):
+    final_combine = []
+    for line in g_search:
+        gene_name = line[4]
+        gene_id = line[3]
+        if gene_name == "N/A":
+            if gene_id != "N/A":
+                final_combine.append(gene_id)
+            else:
+                continue
+        else:
+            final_combine.append(gene_name)
+    if len(final_combine) > 0:
+        return "|".join(final_combine)
+    else:
+        return ""
+
           
 
 def main():
@@ -81,6 +106,7 @@ def main():
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
     parser_create = subparsers.add_parser("create", help="create annotation db")
     parser_pop = subparsers.add_parser("pop", help="return gene id with position input")
+    parser_np = subparsers.add_parser("np", help="help to annotate npTranscript fusion results")
     parser_create.add_argument("annotation", help="Annotation gtf/gff files to create the db")
     parser_create.add_argument("-n", "--name", help="db name", default="test")
     parser_create.add_argument('-p', "--path", help="path to storage the db and config", default="~/.gpop")
@@ -88,6 +114,10 @@ def main():
     parser_pop.add_argument("chromesome", help="chromesome id", type=str)
     parser_pop.add_argument("position", help="position to check", type=int)
     parser_pop.add_argument("--path", '-p', default="~/.gpop", help="path to storage the db and config")
+    parser_np.add_argument("--db", help="host reference corresponding db")
+    parser_np.add_argument("npTranscript", help="npTranscript output files (join/overlap/nogap.fa.gz)")
+    parser_np.add_argument("--output","-o", help="output file name, if not assign with print to screen in tab format")
+    parser_np.add_argument("--path",'-p', default="~/.gpop", help="path to storage the db and config")
     args = parser.parse_args()
 
     if args.command == "create":
@@ -148,6 +178,67 @@ def main():
 
         else:
             print(f"Could not find {db_file} in current database")
+            sys.exit(1)
+
+    elif args.command == "np":
+        if os.path.exists(args.npTranscript):
+            #load config
+            db_path = args.path
+            config_file = f"{db_path}/config.json"
+            default_db = "human"
+            if os.path.exists(config_file):
+                config_dict = read_db_from_json(config_file)
+                default_db = config_dict["last"]
+            else:
+                print("no config file found, default db as human")
+            current_db = ""
+            if args.db:
+                current_db = args.db
+                config_dict['last'] = args.db
+                save_json_to_file(config_file, config_dict)
+            else:
+                current_db = default_db
+            db_file = f"{db_path}/{current_db}/db.json"
+            if os.path.exists(db_file):
+                db_dict = read_db_from_json(db_file)
+                input_lines = []
+                try:
+                    with gzip.open(args.npTranscript, 'rt') as f_in:
+                        for line in f_in:
+                            input_lines.append(line.strip().replace("\t"," ").replace(",over", " over").split(" "))
+                except:
+                    print(f"Could not open {args.npTranscript}, please use only output from ")
+                #print(input_lines[:5])
+                output_line = []
+                for line in input_lines:
+                    if len(line) > 9:
+                        chrome1, chrome2 = line[5].split(",")
+                        pos1 = int(line[6])
+                        pos2 = int(line[7])
+                        gpop_result1 = find_gene(chrome1, pos1, db_dict, "np")
+                        gpop_result2 = find_gene(chrome2, pos2, db_dict, "np")
+                        gene1 = join_search_result(gpop_result1)
+                        gene2 = join_search_result(gpop_result2)
+                        if len(gene1) == 0:
+                            gene1 = chrome1 + ":" + str(pos1)
+                        if len(gene2) == 0:
+                            gene2 = chrome2 + ":" + str(pos2)
+                        final_cell = gene1 + "," + gene2
+                        output_line.append(line[:8] + [final_cell, line[8],line[9]])
+                if args.output:
+                    with open(args.output, 'w') as m_out:
+                        for line in output_line:
+                            m_out.write("\t".join(line) + "\n")
+                else:
+                    for line in output_line:
+                        print("\t".join(line))
+
+            else:
+                print(f"Could not find {db_file} in current database")
+                sys.exit(1)
+
+        else:
+            print(f"Could not find {args.npTranscript}, please check your input")
             sys.exit(1)
 
     else:
