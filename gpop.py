@@ -98,6 +98,44 @@ def join_search_result(g_search):
         return "|".join(final_combine)
     else:
         return ""
+    
+def inter_chunk(chunks, chrome, db_dict):
+    chunk_info = chunks.split(",")
+    chunk_result_list = []
+    for pair in chunk_info:
+        p1, p2 = pair.split("_")
+        gpop_result1 = find_gene(chrome, int(p1), db_dict, "np")
+        gpop_result2 = find_gene(chrome, int(p2), db_dict, "np")
+        gene1 = join_search_result(gpop_result1)
+        gene2 = join_search_result(gpop_result2)
+        if len(gene1) == 0:
+            gene1 = p1
+        if len(gene2) == 0:
+            gene2 = p2
+        if gene1 == gene2:
+            chunk_result_list.append(gene1)
+        else:
+            chunk_result_list.append(f"{gene1}_{gene2}")
+    return ",".join(chunk_result_list)
+
+    
+def gene_translate_all(chrome_list, start_list, chunk_list, db_dict):
+    start_cell = []
+    chunk_cell = []
+    for i in range(len(chrome_list)):
+        chrome = chrome_list[i]
+        start_pos = start_list[i]
+        chunks = chunk_list[i]
+
+        start_result = find_gene(chrome, int(start_pos), db_dict, "np")
+        start_gene = join_search_result(start_result)
+        if len(start_gene) == 0:
+            start_gene = chrome + ":" + str(start_pos)
+        start_cell.append(start_gene)
+        chunk_gene = inter_chunk(chunks, chrome, db_dict)
+        chunk_cell.append(chunk_gene)
+    return (";".join(start_cell), ";".join(chunk_cell))
+
 
           
 
@@ -115,7 +153,8 @@ def main():
     parser_pop.add_argument("position", help="position to check", type=int)
     parser_pop.add_argument("--path", '-p', default="~/.gpop", help="path to storage the db and config")
     parser_np.add_argument("--db", help="host reference corresponding db")
-    parser_np.add_argument("npTranscript", help="npTranscript output files (join/overlap/nogap.fa.gz)")
+    parser_np.add_argument("npTranscript", help="npTranscript output files (join/overlap/nogap.fa.gz), or all.fa.gz with --all parameter")
+    parser_np.add_argument("--all", default=False, help="handle all.fa.gz input types")
     parser_np.add_argument("--output","-o", help="output file name, if not assign with print to screen in tab format")
     parser_np.add_argument("--path",'-p', default="~/.gpop", help="path to storage the db and config")
     args = parser.parse_args()
@@ -210,21 +249,35 @@ def main():
                     print(f"Could not open {args.npTranscript}, please use only output from ")
                 #print(input_lines[:5])
                 output_line = []
-                for line in input_lines:
-                    if len(line) > 9:
-                        chrome1, chrome2 = line[5].split(",")
-                        pos1 = int(line[6])
-                        pos2 = int(line[7])
-                        gpop_result1 = find_gene(chrome1, pos1, db_dict, "np")
-                        gpop_result2 = find_gene(chrome2, pos2, db_dict, "np")
-                        gene1 = join_search_result(gpop_result1)
-                        gene2 = join_search_result(gpop_result2)
-                        if len(gene1) == 0:
-                            gene1 = chrome1 + ":" + str(pos1)
-                        if len(gene2) == 0:
-                            gene2 = chrome2 + ":" + str(pos2)
-                        final_cell = gene1 + "," + gene2
-                        output_line.append(line[:8] + [final_cell, line[8],line[9]])
+                if args.all:
+                    #handle all.fa.gz
+                    for line in input_lines:
+                        if len(line) > 9:
+                            chrome_list = line[1].split(";")
+                            start_list = line[3].split(";")
+                            chunk_list = line[4].split(";")
+                            if len(chrome_list) != len(start_list):
+                                print(f"Information of the line contains error, will skip this line")
+                                continue
+                            start_gene_cell, chunk_gene_cell = gene_translate_all(chrome_list, start_list, chunk_list, db_dict)
+                            output_line.append(line[:4] + [start_gene_cell, line[4], chunk_gene_cell] + line[5:])
+                else:
+                    #handle overlap/join/nogap
+                    for line in input_lines:
+                        if len(line) > 9:
+                            chrome1, chrome2 = line[5].split(",")
+                            pos1 = int(line[6])
+                            pos2 = int(line[7])
+                            gpop_result1 = find_gene(chrome1, pos1, db_dict, "np")
+                            gpop_result2 = find_gene(chrome2, pos2, db_dict, "np")
+                            gene1 = join_search_result(gpop_result1)
+                            gene2 = join_search_result(gpop_result2)
+                            if len(gene1) == 0:
+                                gene1 = chrome1 + ":" + str(pos1)
+                            if len(gene2) == 0:
+                                gene2 = chrome2 + ":" + str(pos2)
+                            final_cell = gene1 + "," + gene2
+                            output_line.append(line[:8] + [final_cell, line[8],line[9]])
                 if args.output:
                     with open(args.output, 'w') as m_out:
                         for line in output_line:
